@@ -39,3 +39,23 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python virtual envs
+venv/
+__pycache__/
+*.pyc
+
+# backend generated output
+/backend/output/
+
+# large binary/media files
+*.mp4
+*.gif
+*.rar
+*.hdr
+*.obj
+*.glb
+/public/diamonds_extracted/
+/public/fonts/
+/public/images/
+/public/leather_poster.jpg
