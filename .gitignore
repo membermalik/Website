@@ -55,6 +55,9 @@ __pycache__/
 *.hdr
 *.obj
 *.glb
+# BUT allow the critical 3D assets the app needs to function
+!/public/diamonds.glb
+!/public/apartment.hdr
 /public/diamonds_extracted/
 /public/fonts/
 /public/images/
