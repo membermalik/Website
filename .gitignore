@@ -48,10 +48,12 @@ __pycache__/
 # backend generated output
 /backend/output/
 
-# large binary/media files - exclude large videos and raw unoptimized textures
+# large binary/media files - exclude unused large videos and raw unoptimized textures
 *.mp4
 *.gif
 *.rar
+# Allow the hero background video (needed for the hero section)
+!/public/leather_hq.mp4
 # BUT allow the critical 3D assets the app needs to function
 !/public/diamonds.glb
 !/public/apartment.hdr
