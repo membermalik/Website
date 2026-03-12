@@ -48,17 +48,17 @@ __pycache__/
 # backend generated output
 /backend/output/
 
-# large binary/media files
+# large binary/media files - exclude large videos and raw unoptimized textures
 *.mp4
 *.gif
 *.rar
-*.hdr
-*.obj
-*.glb
 # BUT allow the critical 3D assets the app needs to function
 !/public/diamonds.glb
 !/public/apartment.hdr
+# Allow all images (needed for the site to display correctly)
+!/public/images/
+!/public/leather_poster.jpg
 /public/diamonds_extracted/
 /public/fonts/
-/public/images/
-/public/leather_poster.jpg
+# Exclude only the large unoptimized raw textures
+/public/images/diamond_texture.png
