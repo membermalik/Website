@@ -1,96 +1,136 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import subprocess
 import uuid
 import os
-import time
 
-app = FastAPI()
+app = FastAPI(title="Jewelry Generator API")
 
-# Enable CORS since the Next.js frontend runs on a different port (localhost:3000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For dev. Restrict in prod!
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class NecklaceRequest(BaseModel):
-    name: str
-    material: str
-    hasDiamonds: bool
+# ─── Models ────────────────────────────────────────────────────────────────────
 
-# Simple in-memory status store for demonstration
-# In production, use Redis or a database
+class NecklaceRequest(BaseModel):
+    name:        str
+    material:    str   = "yellow-gold"   # yellow-gold | white-gold | rose-gold | silver
+    font:        str   = "pacifico"      # pacifico | cinzel | dancing | bebas
+    hasDiamonds: bool  = False
+
+# In-memory job store (use Redis in production)
 jobs = {}
 
-def run_blender_job(job_id: str, request: NecklaceRequest):
-    jobs[job_id] = {"status": "processing", "url": None}
-    
-    # Define output path
-    os.makedirs("output", exist_ok=True)
-    output_glb = os.path.abspath(f"output/{job_id}.glb")
-    
-    # Path to the blender script we'll write next
-    script_path = os.path.abspath("blender_scripts/generate_jewel.py")
-    
-    try:
-        # Command to run Blender in background
-        # Detect OS - Mac uses specific path, Linux usually has 'blender' in PATH
-        import platform
-        if platform.system() == "Darwin":
-            blender_executable = "/Applications/Blender.app/Contents/MacOS/Blender"
-        else:
-            blender_executable = "blender" # Standard for Ubuntu/Linux VPS
-            
-        cmd = [
-            blender_executable, 
-            "-b", # Background (no UI)
-            "-P", script_path, # Execute python script
-            "--", # Arguments for the script follow
-            request.name,
-            request.material,                          # e.g. "yellow-gold"
-            "true" if request.hasDiamonds else "false", # matches args[2].lower() == "true"
-            output_glb                                  # absolute path at args[3]
-        ]
-        
-        print(f"[{job_id}] Starting Blender process...")
-        
-        process = subprocess.run(cmd, capture_output=True, text=True)
-        
-        # Log Blender output for debugging
-        if process.stdout:
-            print(f"[{job_id}] Blender stdout: {process.stdout[-500:]}")
-        if process.stderr:
-            print(f"[{job_id}] Blender stderr: {process.stderr[-500:]}")
-        
-        if process.returncode != 0:
-            print(f"[{job_id}] Blender failed with code {process.returncode}")
-            jobs[job_id] = {"status": "failed", "error": "Blender generation failed"}
-            return
-        
-        # Verify the file was actually created
-        if not os.path.exists(output_glb):
-            print(f"[{job_id}] ERROR: Blender exited 0 but file not found at {output_glb}")
-            jobs[job_id] = {"status": "failed", "error": "Blender did not produce output file"}
-            return
-            
-        print(f"[{job_id}] Finished! File saved to {output_glb}")
-        jobs[job_id] = {"status": "completed", "url": f"/models/{job_id}.glb"}
-        
-    except Exception as e:
-        print(f"[{job_id}] Error: {str(e)}")
-        jobs[job_id] = {"status": "failed", "error": str(e)}
+# ─── Background Job ────────────────────────────────────────────────────────────
+
+def run_jewelry_job(job_id: str, req: NecklaceRequest):
+    jobs[job_id] = {"status": "processing", "glb_url": None, "stl_url": None}
+
+    backend_dir  = os.path.dirname(os.path.abspath(__file__))
+    output_dir   = os.path.join(backend_dir, "output")
+    os.makedirs(output_dir, exist_ok=True)
+
+    output_glb   = os.path.join(output_dir, f"{job_id}.glb")
+    output_stl   = os.path.join(output_dir, f"{job_id}.stl")
+    script_path  = os.path.join(backend_dir, "blender_scripts", "generate_jewel.py")
+    scad_path    = os.path.join(backend_dir, "pendant.scad")
+
+    # Detect Blender
+    import platform
+    blender_exe = "/Applications/Blender.app/Contents/MacOS/Blender" \
+        if platform.system() == "Darwin" else "blender"
+
+    # ── Step 1: Blender → GLB (preview) ───────────────────────────────────────
+    print(f"[{job_id}] Step 1: Generating GLB preview…")
+    blender_cmd = [
+        blender_exe, "-b", "-P", script_path, "--",
+        req.name,
+        req.material,
+        req.font,
+        "true" if req.hasDiamonds else "false",
+        output_glb,
+    ]
+    r1 = subprocess.run(blender_cmd, capture_output=True, text=True)
+    if r1.stdout: print(f"[{job_id}] Blender: {r1.stdout[-400:]}")
+    if r1.stderr: print(f"[{job_id}] Blender ERR: {r1.stderr[-400:]}")
+
+    if r1.returncode != 0 or not os.path.exists(output_glb):
+        print(f"[{job_id}] Blender GLB failed (code {r1.returncode})")
+        jobs[job_id] = {"status": "failed", "error": "GLB generation failed"}
+        return
+
+    print(f"[{job_id}] GLB OK: {os.path.getsize(output_glb):,} bytes")
+
+    # ── Step 2: OpenSCAD → STL (print-ready) ─────────────────────────────────
+    print(f"[{job_id}] Step 2: Generating print-ready STL…")
+
+    # Font name → OpenSCAD font string
+    font_map = {
+        "pacifico": "Pacifico",
+        "cinzel":   "Cinzel:style=Regular",
+        "dancing":  "Dancing Script:style=Regular",
+        "bebas":    "Bebas Neue:style=Regular",
+    }
+    openscad_font = font_map.get(req.font, "Pacifico")
+
+    # Install fonts for OpenSCAD (needs them in ~/.fonts or /usr/share/fonts)
+    fonts_dir = os.path.join(backend_dir, "..", "public", "fonts")
+    fonts_dir = os.path.abspath(fonts_dir)
+
+    scad_cmd = [
+        "openscad", "--export-format", "binstl",
+        "-o", output_stl,
+        scad_path,
+        "-D", f'NAME="{req.name}"',
+        "-D", f'FONT="{openscad_font}"',
+        "--fontpath", fonts_dir,
+    ]
+    r2 = subprocess.run(scad_cmd, capture_output=True, text=True)
+    if r2.stdout: print(f"[{job_id}] OpenSCAD: {r2.stdout[-200:]}")
+    if r2.stderr: print(f"[{job_id}] OpenSCAD ERR: {r2.stderr[-200:]}")
+
+    # ── Step 3: Trimesh validation ────────────────────────────────────────────
+    stl_ok = os.path.exists(output_stl) and os.path.getsize(output_stl) > 1000
+    if stl_ok:
+        try:
+            import trimesh
+            mesh = trimesh.load(output_stl)
+            watertight = bool(mesh.is_watertight)
+            volume_mm3 = round(mesh.volume * 1e9, 1)  # m³ → mm³
+            print(f"[{job_id}] STL OK — watertight={watertight}, volume={volume_mm3}mm³")
+        except Exception as e:
+            print(f"[{job_id}] Trimesh check failed: {e}")
+            watertight = None
+            volume_mm3 = None
+    else:
+        print(f"[{job_id}] STL generation failed — pendant.scad may need font update")
+        watertight = None
+        volume_mm3 = None
+
+    jobs[job_id] = {
+        "status":     "completed",
+        "glb_url":    f"/models/{job_id}.glb",
+        "stl_url":    f"/models/{job_id}.stl" if stl_ok else None,
+        "watertight": watertight,
+        "volume_mm3": volume_mm3,
+    }
+    print(f"[{job_id}] DONE")
+
+
+# ─── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/generate")
 async def request_generation(req: NecklaceRequest, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {"status": "pending", "url": None}
-    
-    background_tasks.add_task(run_blender_job, job_id, req)
-    
+    jobs[job_id] = {"status": "pending"}
+    background_tasks.add_task(run_jewelry_job, job_id, req)
     return {"job_id": job_id, "status": "pending"}
+
 
 @app.get("/api/status/{job_id}")
 async def get_status(job_id: str):
@@ -98,11 +138,13 @@ async def get_status(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     return jobs[job_id]
 
-# Endpoint to serve generated models
-from fastapi.responses import FileResponse
+
 @app.get("/models/{filename}")
 async def get_model(filename: str):
-    file_path = f"output/{filename}"
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path   = os.path.join(backend_dir, "output", filename)
     if os.path.exists(file_path):
-        return FileResponse(file_path)
+        content_type = "model/gltf-binary" if filename.endswith(".glb") else "model/stl"
+        return FileResponse(file_path, media_type=content_type,
+                            filename=filename)
     raise HTTPException(status_code=404, detail="Model file not found")

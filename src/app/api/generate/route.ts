@@ -4,6 +4,7 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:9000';
 
 export async function POST(request: NextRequest) {
     try {
+        // Forward the full body (name, material, font, hasDiamonds)
         const body = await request.json();
         const res = await fetch(`${BACKEND_URL}/api/generate`, {
             method: 'POST',

@@ -1,179 +1,327 @@
+"""
+generate_jewel.py  ─  Professional Jewelry Pendant Generator (Blender)
+─────────────────────────────────────────────────────────────────────
+Called by main.py via subprocess:
+  blender -b -P generate_jewel.py -- <name> <material> <font> <has_diamonds> <output_glb>
+
+This script generates a HIGH-QUALITY GLB for web preview.
+For print-ready STL use pendant.scad (OpenSCAD pipeline).
+"""
 import bpy
 import sys
 import os
 import math
 
-# To run this script:
-# blender -b -P generate_jewel.py -- "Aura" "1" "output.glb"
+# ─── Constants ───────────────────────────────────────────────────────────────
+
+FONTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../public/fonts"))
+
+FONT_MAP = {
+    "pacifico":  "Pacifico.ttf",
+    "cinzel":    "Cinzel-Regular.ttf",
+    "dancing":   "DancingScript-Regular.ttf",
+    "bebas":     "BebasNeue-Regular.ttf",
+}
+
+MATERIAL_COLORS = {
+    "yellow-gold": (0.804, 0.498, 0.196, 1),
+    "white-gold":  (0.900, 0.900, 0.920, 1),
+    "rose-gold":   (0.804, 0.498, 0.459, 1),
+    "silver":      (0.753, 0.753, 0.753, 1),
+}
+
+TARGET_WIDTH_M = 0.050   # 50 mm in Blender units (1 BU = 1 m)
+PLATE_HEIGHT_M = 0.014   # 14 mm
+PLATE_DEPTH_M  = 0.003   # 3 mm
+TEXT_DEPTH_M   = 0.0012  # 1.2 mm relief
+BAIL_R_MAJOR   = 0.002   # 2 mm torus major radius
+BAIL_R_MINOR   = 0.0008  # 0.8 mm tube radius
+
+
+# ─── Scene Setup ──────────────────────────────────────────────────────────────
 
 def clear_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    # Enable required add-ons
+    bpy.ops.preferences.addon_enable(module="object_boolean_tools") if "object_boolean_tools" in bpy.context.preferences.addons else None
 
-def create_text(name: str):
-    # Create the text curve
-    bpy.ops.object.text_add(location=(0, 0, 0))
-    text_obj = bpy.context.object
-    text_obj.data.body = name
-    
-    # Try to load the Pacifico font if available, else fallback to default
-    font_path = os.path.abspath("../public/fonts/Pacifico.ttf") # We need to make sure the ttf exists!
-    if os.path.exists(font_path):
+
+# ─── Pendant Plate ─────────────────────────────────────────────────────────────
+
+def create_plate():
+    """Create the pendant back-plate (rounded rectangle)."""
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0))
+    plate = bpy.context.object
+    plate.name = "Plate"
+    plate.scale = (TARGET_WIDTH_M, PLATE_HEIGHT_M, PLATE_DEPTH_M)
+    bpy.ops.object.transform_apply(scale=True)
+
+    # Bevel the edges for a rounded look
+    bpy.ops.object.modifier_add(type='BEVEL')
+    m = plate.modifiers["Bevel"]
+    m.width = 0.0015
+    m.segments = 4
+    m.limit_method = 'NONE'
+    bpy.ops.object.modifier_apply(modifier="Bevel")
+
+    bpy.ops.object.shade_smooth()
+    return plate
+
+
+# ─── Text Relief ────────────────────────────────────────────────────────────────
+
+def create_text_mesh(name: str, font_key: str):
+    """Create extruded text, scale to fit plate, return mesh object."""
+    bpy.ops.object.text_add(location=(0, 0, PLATE_DEPTH_M - 0.0001))
+    txt = bpy.context.object
+    txt.name = "TextCurve"
+    txt.data.body = name
+
+    # Font
+    font_file = os.path.join(FONTS_DIR, FONT_MAP.get(font_key, "Pacifico.ttf"))
+    if os.path.exists(font_file):
         try:
-            custom_font = bpy.data.fonts.load(font_path)
-            text_obj.data.font = custom_font
+            font = bpy.data.fonts.load(font_file)
+            txt.data.font = font
         except Exception as e:
-            print(f"Could not load font: {e}")
+            print(f"Font load error: {e}")
 
-    # Text Settings for jewelry
-    text_obj.data.extrude = 0.05
-    text_obj.data.bevel_depth = 0.005
-    text_obj.data.bevel_resolution = 4
-    text_obj.data.align_x = 'CENTER'
-    text_obj.data.align_y = 'CENTER'
+    # Extrusion settings (print-quality)
+    txt.data.extrude       = TEXT_DEPTH_M
+    txt.data.bevel_depth   = 0.0002
+    txt.data.bevel_resolution = 2
+    txt.data.align_x       = 'CENTER'
+    txt.data.align_y       = 'CENTER'
+    txt.rotation_euler[0]  = 0  # Text lies flat (XY plane)
 
-    # Convert to mesh
+    # Convert to mesh for scale/boolean ops
     bpy.ops.object.convert(target='MESH')
-    
-    # Rotate 90 degrees on the X-axis so it stands up vertically facing the camera
-    text_obj.rotation_euler[0] = math.pi / 2
-    # Apply rotation
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
-    
-    return text_obj
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-def create_diamond_mesh():
-    # Create a simple generic brilliant cut approximation
-    bpy.ops.mesh.primitive_cone_add(vertices=8, radius1=0.015, radius2=0.03, depth=0.02)
-    diamond = bpy.context.object
-    diamond.name = "DiamondInstance"
-    # Rotate pointing forward
-    diamond.rotation_euler[0] = math.pi / 2
-    return diamond
+    # Scale text so its X dimension matches plate width (minus padding)
+    txt.update_from_editmode() if hasattr(txt, 'update_from_editmode') else None
+    bpy.context.view_layer.update()
+    current_w = txt.dimensions.x
+    if current_w > 0.001:
+        target = TARGET_WIDTH_M * 0.88   # 88% of plate width = 4.4mm padding each side
+        scale_factor = target / current_w
+        txt.scale = (scale_factor, scale_factor, 1.0)
+        bpy.ops.object.transform_apply(scale=True)
 
-def apply_jewelcraft(obj, has_diamonds: bool):
-    """
-    Applies JewelCraft specific operations.
-    If the addon isn't installed or for headless systems, this implements a 
-    precise algorithmic Pave setting using raycasting on the front face.
-    """
-    if not has_diamonds:
-        bpy.ops.object.shade_smooth()
-        return
+    # Centre text vertically on plate
+    txt.location.y = 0
+    bpy.ops.object.transform_apply(location=True)
 
-    # Create the diamond reference
-    diamond = create_diamond_mesh()
-    diamond.hide_render = True
-    diamond.hide_set(True)
+    bpy.ops.object.shade_smooth()
+    return txt
 
-    # We will raycast against the text object to find the front faces
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    
-    # Calculate bounding box
-    bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
-    min_x = min([c.x for c in bbox_corners])
-    max_x = max([c.x for c in bbox_corners])
-    min_z = min([c.z for c in bbox_corners])
-    max_z = max([c.z for c in bbox_corners])
-    max_y = max([c.y for c in bbox_corners]) # Front face is facing +Y
 
-    stone_spacing = 0.045
-    
-    diamonds_to_join = []
-    
-    # Scan a grid over the front of the text
-    x = min_x + stone_spacing / 2
+# ─── Bail / Öse ────────────────────────────────────────────────────────────────
+
+def create_bail():
+    """Create the bail ring above the plate for chain attachment."""
+    # Position: top of plate + ring radius
+    bail_z = PLATE_DEPTH_M + BAIL_R_MAJOR
+    bail_y = PLATE_HEIGHT_M / 2 - BAIL_R_MAJOR * 0.5
+
+    bpy.ops.mesh.primitive_torus_add(
+        major_radius=BAIL_R_MAJOR,
+        minor_radius=BAIL_R_MINOR,
+        major_segments=48,
+        minor_segments=16,
+        location=(0, bail_y, bail_z),
+        rotation=(math.pi / 2, 0, 0)   # Ring opens front-to-back
+    )
+    bail = bpy.context.object
+    bail.name = "Bail"
+    bpy.ops.object.shade_smooth()
+
+    # Neck connector (small box bridging plate top to bail)
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, bail_y, PLATE_DEPTH_M / 2))
+    neck = bpy.context.object
+    neck.scale = (BAIL_R_MAJOR * 2.4, BAIL_R_MAJOR * 1.6, PLATE_DEPTH_M)
+    bpy.ops.object.transform_apply(scale=True)
+    neck.name = "Neck"
+
+    # Join bail + neck
+    bpy.ops.object.select_all(action='DESELECT')
+    bail.select_set(True)
+    neck.select_set(True)
+    bpy.context.view_layer.objects.active = bail
+    bpy.ops.object.join()
+    return bpy.context.object
+
+
+# ─── Materials ─────────────────────────────────────────────────────────────────
+
+def apply_gold_material(obj, material_key: str, name: str = "GoldMat"):
+    mat = bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+
+    output = nodes.new('ShaderNodeOutputMaterial')
+    bsdf   = nodes.new('ShaderNodeBsdfPrincipled')
+    links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+
+    base_color = MATERIAL_COLORS.get(material_key, MATERIAL_COLORS["yellow-gold"])
+    bsdf.inputs["Base Color"].default_value    = base_color
+    bsdf.inputs["Metallic"].default_value      = 1.0
+    bsdf.inputs["Roughness"].default_value     = 0.08
+    bsdf.inputs["Specular IOR Level"].default_value = 0.5
+
+    if obj.data.materials:
+        obj.data.materials[0] = mat
+    else:
+        obj.data.materials.append(mat)
+
+
+def apply_diamond_material(obj):
+    mat = bpy.data.materials.new(name="DiamondMat")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+
+    output = nodes.new('ShaderNodeOutputMaterial')
+    bsdf   = nodes.new('ShaderNodeBsdfPrincipled')
+    links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+
+    bsdf.inputs["Base Color"].default_value       = (1.0, 1.0, 1.0, 1.0)
+    bsdf.inputs["Metallic"].default_value         = 0.0
+    bsdf.inputs["Roughness"].default_value        = 0.0
+    bsdf.inputs["IOR"].default_value              = 2.417
+    bsdf.inputs["Transmission Weight"].default_value = 0.95
+    bsdf.inputs["Coat Weight"].default_value      = 1.0
+
+    if obj.data.materials:
+        obj.data.materials[0] = mat
+    else:
+        obj.data.materials.append(mat)
+
+
+# ─── Diamond Pavé ──────────────────────────────────────────────────────────────
+
+def add_diamonds(text_obj):
+    """Scatter small brilliant-cut diamonds on the text front face via raycasting."""
+    import mathutils
+
+    depsgraph   = bpy.context.evaluated_depsgraph_get()
+    bbox        = [text_obj.matrix_world @ mathutils.Vector(c) for c in text_obj.bound_box]
+    min_x = min(c.x for c in bbox);  max_x = max(c.x for c in bbox)
+    min_z = min(c.z for c in bbox);  max_z = max(c.z for c in bbox)
+    front_y = max(c.y for c in bbox)
+
+    # Diamond template (tiny brilliant cut approximation)
+    bpy.ops.mesh.primitive_cone_add(vertices=8, radius1=0.0008, radius2=0.0016, depth=0.001)
+    template = bpy.context.object
+    template.name = "DiamondTemplate"
+    template.hide_set(True)
+    template.hide_render = True
+
+    spacing = 0.0022
+    placed  = []
+    x = min_x + spacing / 2
+    row = 0
     while x <= max_x:
-        z = min_z + stone_spacing / 2
-        # Offset every other row for honeycomb tight packing
-        row_idx = 0
+        z = min_z + spacing / 2
         while z <= max_z:
-            offset_x = x + (stone_spacing / 2 if row_idx % 2 == 1 else 0)
-            
-            # Ray origin slightly in front of the text
-            origin = mathutils.Vector((offset_x, max_y + 0.2, z))
-            direction = mathutils.Vector((0, -1, 0)) # Shoot backwards
-            
-            # Raycast
-            success, location, normal, index, obj_hit, matrix = bpy.context.scene.ray_cast(depsgraph, origin, direction)
-            
-            # If we hit the text and the normal is pointing mostly forward (+Y)
-            if success and obj_hit == obj and normal.y > 0.8:
-                # Discard hits too close to the very edge to avoid clipping
-                
-                # Instance a stone
-                stone = diamond.copy()
-                stone.data = diamond.data.copy()
-                # Sink it slightly into the metal
-                stone.location = location + mathutils.Vector((0, -0.005, 0))
-                bpy.context.collection.objects.link(stone)
-                diamonds_to_join.append(stone)
-                
-            z += stone_spacing
-            row_idx += 1
-        x += stone_spacing
+            ox = x + (spacing / 2 if row % 2 else 0)
+            origin    = mathutils.Vector((ox, front_y + 0.05, z))
+            direction = mathutils.Vector((0, -1, 0))
+            ok, loc, normal, _, obj_hit, _ = bpy.context.scene.ray_cast(depsgraph, origin, direction)
+            if ok and obj_hit == text_obj and normal.y > 0.7:
+                d = template.copy()
+                d.data = template.data.copy()
+                d.location = loc + mathutils.Vector((0, -0.0003, 0))
+                bpy.context.collection.objects.link(d)
+                placed.append(d)
+            z += spacing
+        row += 1
+        x += spacing
 
-    # Join all diamonds into a single mesh for performance
-    if diamonds_to_join:
+    template.hide_set(False)
+    if placed:
         bpy.ops.object.select_all(action='DESELECT')
-        for d in diamonds_to_join:
+        for d in placed:
             d.select_set(True)
-        bpy.context.view_layer.objects.active = diamonds_to_join[0]
+        bpy.context.view_layer.objects.active = placed[0]
         bpy.ops.object.join()
-        
-        joined_diamonds = bpy.context.active_object
-        joined_diamonds.name = "DiamondInstance"
-        
-        # Apply special physical material name so Next.js can target it easily
-        mat = bpy.data.materials.new(name="DiamondMaterial")
-        joined_diamonds.data.materials.append(mat)
-    
-def apply_materials(obj, has_diamonds, material="yellow-gold"):
-    """Add very basic placeholder materials for GLB export"""
-    gold_mat = bpy.data.materials.new(name="Gold")
-    gold_mat.use_nodes = True
-    bsdf = gold_mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf:
-        if material == "white-gold":
-            bsdf.inputs["Base Color"].default_value = (0.9, 0.9, 0.95, 1)
-        elif material == "rose-gold":
-            bsdf.inputs["Base Color"].default_value = (0.85, 0.55, 0.45, 1)
-        else: # yellow-gold default
-            bsdf.inputs["Base Color"].default_value = (0.7, 0.5, 0.1, 1)
-        bsdf.inputs["Metallic"].default_value = 1.0
-        bsdf.inputs["Roughness"].default_value = 0.1
-    
-    if len(obj.data.materials) == 0:
-        obj.data.materials.append(gold_mat)
+        diamonds = bpy.context.active_object
+        diamonds.name = "DiamondInstance"
+        apply_diamond_material(diamonds)
 
-def export_glb(filepath):
-    # Ensure directory exists
+    # Remove template
+    bpy.data.objects.remove(template, do_unlink=True)
+
+
+# ─── Lighting ──────────────────────────────────────────────────────────────────
+
+def setup_lighting():
+    # Three-point lighting rig for GLB preview
+    lights = [
+        ("KeyLight",   (0.3, -0.3,  0.4), 800),
+        ("FillLight",  (-0.3, -0.1, 0.2), 300),
+        ("RimLight",   (0,     0.4, 0.3), 200),
+    ]
+    for name, pos, strength in lights:
+        bpy.ops.object.light_add(type='AREA', location=pos)
+        l = bpy.context.object
+        l.name = name
+        l.data.energy = strength
+        l.data.size   = 0.2
+
+
+# ─── Export ────────────────────────────────────────────────────────────────────
+
+def export_glb(filepath: str):
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    
     bpy.ops.export_scene.gltf(
         filepath=filepath,
         export_format='GLB',
         export_materials='EXPORT',
-        export_apply=True
+        export_apply=True,
+        export_lights=True,
     )
+    print(f"SUCCESS: GLB exported to {filepath}")
+
+
+# ─── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    # Called by main.py as: blender -- name material hasDiamonds output_path
+    # Args: name  material  font  has_diamonds  output_glb
     args = sys.argv[sys.argv.index("--") + 1:]
-    
-    name = args[0]
-    material = args[1]                        # e.g. "yellow-gold"
-    has_diamonds = args[2].lower() == "true"  # "true" or "false"
-    output_path = args[3]                     # absolute path to .glb file
+    name         = args[0]
+    material     = args[1]                       # e.g. "yellow-gold"
+    font         = args[2].lower()               # e.g. "pacifico"
+    has_diamonds = args[3].lower() == "true"
+    output_path  = args[4]
 
     clear_scene()
-    
-    text_obj = create_text(name)
-    apply_jewelcraft(text_obj, has_diamonds)
-    apply_materials(text_obj, has_diamonds, material)
-    
+
+    # 1. Plate
+    plate = create_plate()
+    apply_gold_material(plate, material, "PlateMat")
+
+    # 2. Text
+    text = create_text_mesh(name, font)
+    apply_gold_material(text, material, "TextMat")
+
+    # 3. Bail
+    bail = create_bail()
+    apply_gold_material(bail, material, "BailMat")
+
+    # 4. Diamonds (optional)
+    if has_diamonds:
+        add_diamonds(text)
+
+    # 5. Lighting
+    setup_lighting()
+
+    # 6. Export
     export_glb(output_path)
-    
-    print(f"SUCCESS: Exported to {output_path}")
+
 
 if __name__ == "__main__":
     main()
