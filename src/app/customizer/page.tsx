@@ -18,8 +18,9 @@ export default function CustomizerPage() {
     const handleGeneratePreview = async () => {
         setIsGenerating(true);
         setModelUrl(null);
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
         try {
-            const res = await fetch("http://localhost:8000/api/generate", {
+            const res = await fetch(`${backendUrl}/api/generate`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name, material, hasDiamonds })
@@ -28,10 +29,10 @@ export default function CustomizerPage() {
             const jobId = data.job_id;
 
             const poll = setInterval(async () => {
-                const statusRes = await fetch(`http://localhost:8000/api/status/${jobId}`);
+                const statusRes = await fetch(`${backendUrl}/api/status/${jobId}`);
                 const statusData = await statusRes.json();
                 if (statusData.status === "completed") {
-                    setModelUrl(`http://localhost:8000${statusData.url}`);
+                    setModelUrl(`${backendUrl}${statusData.url}`);
                     setIsGenerating(false);
                     clearInterval(poll);
                 } else if (statusData.status === "failed") {
