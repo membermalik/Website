@@ -50,24 +50,33 @@ def run_blender_job(job_id: str, request: NecklaceRequest):
             "-P", script_path, # Execute python script
             "--", # Arguments for the script follow
             request.name,
-            "1" if request.hasDiamonds else "0",
-            output_glb
+            request.material,                          # e.g. "yellow-gold"
+            "true" if request.hasDiamonds else "false", # matches args[2].lower() == "true"
+            output_glb                                  # absolute path at args[3]
         ]
         
         print(f"[{job_id}] Starting Blender process...")
         
-        # Here we mock the processing time because running actual Jewelcraft in background 
-        # is complex and might crash if Blender is not installed properly on your machine.
-        # IF YOU HAVE BLENDER: uncomment the next lines
         process = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # Log Blender output for debugging
+        if process.stdout:
+            print(f"[{job_id}] Blender stdout: {process.stdout[-500:]}")
+        if process.stderr:
+            print(f"[{job_id}] Blender stderr: {process.stderr[-500:]}")
+        
         if process.returncode != 0:
-            print(f"Blender Error: {process.stderr}")
+            print(f"[{job_id}] Blender failed with code {process.returncode}")
             jobs[job_id] = {"status": "failed", "error": "Blender generation failed"}
+            return
+        
+        # Verify the file was actually created
+        if not os.path.exists(output_glb):
+            print(f"[{job_id}] ERROR: Blender exited 0 but file not found at {output_glb}")
+            jobs[job_id] = {"status": "failed", "error": "Blender did not produce output file"}
             return
             
         print(f"[{job_id}] Finished! File saved to {output_glb}")
-        
-        # If successful, in a real app we upload to S3. Here we serve from disk.
         jobs[job_id] = {"status": "completed", "url": f"/models/{job_id}.glb"}
         
     except Exception as e:
