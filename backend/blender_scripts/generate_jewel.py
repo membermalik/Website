@@ -127,13 +127,18 @@ def apply_jewelcraft(obj, has_diamonds: bool):
         mat = bpy.data.materials.new(name="DiamondMaterial")
         joined_diamonds.data.materials.append(mat)
     
-def apply_materials(obj, has_diamonds):
+def apply_materials(obj, has_diamonds, material="yellow-gold"):
     """Add very basic placeholder materials for GLB export"""
     gold_mat = bpy.data.materials.new(name="Gold")
     gold_mat.use_nodes = True
     bsdf = gold_mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.7, 0.5, 0.1, 1) # Yellow Gold approx
+        if material == "white-gold":
+            bsdf.inputs["Base Color"].default_value = (0.9, 0.9, 0.95, 1)
+        elif material == "rose-gold":
+            bsdf.inputs["Base Color"].default_value = (0.85, 0.55, 0.45, 1)
+        else: # yellow-gold default
+            bsdf.inputs["Base Color"].default_value = (0.7, 0.5, 0.1, 1)
         bsdf.inputs["Metallic"].default_value = 1.0
         bsdf.inputs["Roughness"].default_value = 0.1
     
@@ -152,17 +157,19 @@ def export_glb(filepath):
     )
 
 def main():
+    # Called by main.py as: blender -- name material hasDiamonds output_path
     args = sys.argv[sys.argv.index("--") + 1:]
     
     name = args[0]
-    has_diamonds = args[1] == "1"
-    output_path = args[2]
+    material = args[1]                        # e.g. "yellow-gold"
+    has_diamonds = args[2].lower() == "true"  # "true" or "false"
+    output_path = args[3]                     # absolute path to .glb file
 
     clear_scene()
     
     text_obj = create_text(name)
     apply_jewelcraft(text_obj, has_diamonds)
-    apply_materials(text_obj, has_diamonds)
+    apply_materials(text_obj, has_diamonds, material)
     
     export_glb(output_path)
     
