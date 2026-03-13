@@ -31,7 +31,9 @@ export default function CustomizerPage() {
                 const statusRes = await fetch(`/api/status/${jobId}`);
                 const statusData = await statusRes.json();
                 if (statusData.status === "completed") {
-                    setModelUrl(`http://72.60.84.241:9000${statusData.url}`);
+                    // Extract just the filename and use our HTTPS proxy route
+                    const filename = statusData.url.split('/').pop();
+                    setModelUrl(`/api/models/${filename}`);
                     setIsGenerating(false);
                     clearInterval(poll);
                 } else if (statusData.status === "failed") {
