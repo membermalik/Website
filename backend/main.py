@@ -83,7 +83,8 @@ def run_jewelry_job(job_id: str, req: NecklaceRequest):
     fonts_dir = os.path.abspath(fonts_dir)
 
     scad_cmd = [
-        "openscad", "--export-format", "binstl",
+        "xvfb-run", "-a",
+        "openscad",
         "-o", output_stl,
         scad_path,
         "-D", f'NAME="{req.name}"',
@@ -91,8 +92,8 @@ def run_jewelry_job(job_id: str, req: NecklaceRequest):
         "--fontpath", fonts_dir,
     ]
     r2 = subprocess.run(scad_cmd, capture_output=True, text=True)
-    if r2.stdout: print(f"[{job_id}] OpenSCAD: {r2.stdout[-200:]}")
-    if r2.stderr: print(f"[{job_id}] OpenSCAD ERR: {r2.stderr[-200:]}")
+    if r2.stdout: print(f"[{job_id}] OpenSCAD: {r2.stdout[-300:]}")
+    if r2.stderr: print(f"[{job_id}] OpenSCAD ERR: {r2.stderr[-300:]}")
 
     # ── Step 3: Trimesh validation ────────────────────────────────────────────
     stl_ok = os.path.exists(output_stl) and os.path.getsize(output_stl) > 1000
