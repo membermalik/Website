@@ -89,7 +89,6 @@ def run_jewelry_job(job_id: str, req: NecklaceRequest):
         scad_path,
         "-D", f'NAME="{req.name}"',
         "-D", f'FONT="{openscad_font}"',
-        "--fontpath", fonts_dir,
     ]
     r2 = subprocess.run(scad_cmd, capture_output=True, text=True)
     if r2.stdout: print(f"[{job_id}] OpenSCAD: {r2.stdout[-300:]}")
