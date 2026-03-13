@@ -1,19 +1,19 @@
 """
-generate_jewel.py  ─  Professional Jewelry Pendant Generator (Blender)
-─────────────────────────────────────────────────────────────────────
-Called by main.py via subprocess:
-  blender -b -P generate_jewel.py -- <name> <material> <font> <has_diamonds> <output_glb>
+generate_jewel.py  ─  Name Necklace Pendant Generator (Blender)
+─────────────────────────────────────────────────────────────────
+Design: NO backing plate — just the name itself as the pendant,
+connected by a thin base-spine, with a bail ring at the top.
 
-This script generates a HIGH-QUALITY GLB for web preview.
-For print-ready STL use pendant.scad (OpenSCAD pipeline).
+Called by main.py:
+  blender -b -P generate_jewel.py -- <name> <material> <font> <has_diamonds> <output_glb>
 """
 import bpy
 import sys
 import os
 import math
+import bmesh
 
-# ─── Constants ───────────────────────────────────────────────────────────────
-
+# ─── Constants ────────────────────────────────────────────────
 FONTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../public/fonts"))
 
 FONT_MAP = {
@@ -30,54 +30,65 @@ MATERIAL_COLORS = {
     "silver":      (0.753, 0.753, 0.753, 1),
 }
 
-TARGET_WIDTH_M = 0.050   # 50 mm in Blender units (1 BU = 1 m)
-PLATE_HEIGHT_M = 0.014   # 14 mm
-PLATE_DEPTH_M  = 0.003   # 3 mm
-TEXT_DEPTH_M   = 0.0012  # 1.2 mm relief
-BAIL_R_MAJOR   = 0.002   # 2 mm torus major radius
-BAIL_R_MINOR   = 0.0008  # 0.8 mm tube radius
+# Real-world target size: the name = 50mm wide
+TARGET_WIDTH_M  = 0.050   # 50 mm
+TEXT_HEIGHT_M   = 0.018   # ~18 mm tall letters
+TEXT_EXTRUDE_M  = 0.0035  # 3.5 mm depth — solid, printable
+TEXT_BEVEL_M    = 0.0003  # tiny bevel for nice edges
+SPINE_THICK_M   = 0.0020  # 2 mm thin bar connecting letters at base
+SPINE_HEIGHT_M  = 0.0025  # 2.5 mm height of the spine
+BAIL_R_MAJOR    = 0.0020  # 2 mm bail ring outer radius
+BAIL_R_MINOR    = 0.0008  # 0.8 mm tube thickness
 
 
-# ─── Scene Setup ──────────────────────────────────────────────────────────────
+# ─── Scene Setup ────────────────────────────────────────────────────────────
 
 def clear_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    # Enable required add-ons
-    bpy.ops.preferences.addon_enable(module="object_boolean_tools") if "object_boolean_tools" in bpy.context.preferences.addons else None
 
 
-# ─── Pendant Plate ─────────────────────────────────────────────────────────────
+# ─── Gold Material ──────────────────────────────────────────────────────────
 
-def create_plate():
-    """Create the pendant back-plate (rounded rectangle)."""
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0))
-    plate = bpy.context.object
-    plate.name = "Plate"
-    plate.scale = (TARGET_WIDTH_M, PLATE_HEIGHT_M, PLATE_DEPTH_M)
-    bpy.ops.object.transform_apply(scale=True)
-
-    # Bevel the edges for a rounded look
-    bpy.ops.object.modifier_add(type='BEVEL')
-    m = plate.modifiers["Bevel"]
-    m.width = 0.0015
-    m.segments = 4
-    m.limit_method = 'NONE'
-    bpy.ops.object.modifier_apply(modifier="Bevel")
-
-    bpy.ops.object.shade_smooth()
-    return plate
+def make_gold_material(material_key: str, name: str = "Gold"):
+    mat = bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+    out  = nodes.new('ShaderNodeOutputMaterial')
+    bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+    links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+    color = MATERIAL_COLORS.get(material_key, MATERIAL_COLORS["yellow-gold"])
+    bsdf.inputs["Base Color"].default_value          = color
+    bsdf.inputs["Metallic"].default_value            = 1.0
+    bsdf.inputs["Roughness"].default_value           = 0.07
+    bsdf.inputs["Specular IOR Level"].default_value  = 0.5
+    return mat
 
 
-# ─── Text Relief ────────────────────────────────────────────────────────────────
+def apply_material(obj, mat):
+    if obj.data.materials:
+        obj.data.materials[0] = mat
+    else:
+        obj.data.materials.append(mat)
 
-def create_text_mesh(name: str, font_key: str):
-    """Create extruded text, scale to fit plate, return mesh object."""
-    bpy.ops.object.text_add(location=(0, 0, PLATE_DEPTH_M - 0.0001))
+
+# ─── Name Text Mesh ─────────────────────────────────────────────────────────
+
+def create_name_mesh(name: str, font_key: str) -> bpy.types.Object:
+    """
+    Create extruded text, scale to TARGET_WIDTH_M, convert to mesh.
+    The text lies in the XZ-plane (face pointing in +Y direction),
+    which means it faces the camera when viewed from front.
+    """
+    bpy.ops.object.text_add(location=(0, 0, 0))
     txt = bpy.context.object
-    txt.name = "TextCurve"
-    txt.data.body = name
+    txt.name = "NameText"
+    txt.data.body       = name
+    txt.data.align_x    = 'CENTER'
+    txt.data.align_y    = 'CENTER'
 
-    # Font
+    # Load font
     font_file = os.path.join(FONTS_DIR, FONT_MAP.get(font_key, "Pacifico.ttf"))
     if os.path.exists(font_file):
         try:
@@ -86,62 +97,84 @@ def create_text_mesh(name: str, font_key: str):
         except Exception as e:
             print(f"Font load error: {e}")
 
-    # Extrusion settings (print-quality)
-    txt.data.extrude       = TEXT_DEPTH_M
-    txt.data.bevel_depth   = 0.0002
+    # Extrusion — thick enough to be solid jewelry
+    txt.data.extrude         = TEXT_EXTRUDE_M
+    txt.data.bevel_depth     = TEXT_BEVEL_M
     txt.data.bevel_resolution = 2
-    txt.data.align_x       = 'CENTER'
-    txt.data.align_y       = 'CENTER'
-    txt.rotation_euler[0]  = 0  # Text lies flat (XY plane)
 
-    # Convert to mesh for scale/boolean ops
+    # Text is created in XY plane; rotate so face points +Y (front)
+    txt.rotation_euler = (math.pi / 2, 0, 0)
+    bpy.ops.object.transform_apply(rotation=True)
+
+    # Convert to mesh
     bpy.ops.object.convert(target='MESH')
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    bpy.ops.object.transform_apply(location=True, scale=True)
 
-    # Scale text so its X dimension matches plate width (minus padding)
-    txt.update_from_editmode() if hasattr(txt, 'update_from_editmode') else None
+    # Scale to target width
     bpy.context.view_layer.update()
-    current_w = txt.dimensions.x
-    if current_w > 0.001:
-        target = TARGET_WIDTH_M * 0.88   # 88% of plate width = 4.4mm padding each side
-        scale_factor = target / current_w
-        txt.scale = (scale_factor, scale_factor, 1.0)
+    w = txt.dimensions.x
+    if w > 0.001:
+        sf = TARGET_WIDTH_M / w
+        txt.scale = (sf, sf, sf)
         bpy.ops.object.transform_apply(scale=True)
 
-    # Centre text vertically on plate
-    txt.location.y = 0
+    # Centre at world origin
+    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
+    txt.location = (0, 0, 0)
     bpy.ops.object.transform_apply(location=True)
 
     bpy.ops.object.shade_smooth()
     return txt
 
 
-# ─── Bail / Öse ────────────────────────────────────────────────────────────────
+# ─── Base Spine (connects all letter islands) ────────────────────────────────
 
-def create_bail():
-    """Create the bail ring above the plate for chain attachment."""
-    # Position: top of plate + ring radius
-    bail_z = PLATE_DEPTH_M + BAIL_R_MAJOR
-    bail_y = PLATE_HEIGHT_M / 2 - BAIL_R_MAJOR * 0.5
+def create_base_spine(text_obj: bpy.types.Object) -> bpy.types.Object:
+    """
+    Thin flat bar running the full width at the bottom of the name.
+    This visually and structurally connects all letters.
+    """
+    bpy.context.view_layer.update()
+    w  = text_obj.dimensions.x
+    bz = text_obj.location.z - text_obj.dimensions.z / 2.0  # bottom of text in world Z
+
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, bz + SPINE_HEIGHT_M / 2))
+    spine = bpy.context.object
+    spine.name = "BaseSpine"
+    spine.scale = (w * 1.01, TEXT_EXTRUDE_M, SPINE_HEIGHT_M)
+    bpy.ops.object.transform_apply(scale=True)
+    bpy.ops.object.shade_smooth()
+    return spine
+
+
+# ─── Bail Ring ──────────────────────────────────────────────────────────────
+
+def create_bail(text_obj: bpy.types.Object) -> bpy.types.Object:
+    """Bail (Öse) ring sitting at the top-centre of the name."""
+    bpy.context.view_layer.update()
+    top_z = text_obj.location.z + text_obj.dimensions.z / 2.0
+
+    bail_z = top_z + BAIL_R_MAJOR * 1.2
 
     bpy.ops.mesh.primitive_torus_add(
-        major_radius=BAIL_R_MAJOR,
-        minor_radius=BAIL_R_MINOR,
-        major_segments=48,
-        minor_segments=16,
-        location=(0, bail_y, bail_z),
-        rotation=(math.pi / 2, 0, 0)   # Ring opens front-to-back
+        major_radius  = BAIL_R_MAJOR,
+        minor_radius  = BAIL_R_MINOR,
+        major_segments = 48,
+        minor_segments = 12,
+        location      = (0, 0, bail_z),
+        rotation      = (math.pi / 2, 0, 0),   # ring opens left-right for chain
     )
     bail = bpy.context.object
     bail.name = "Bail"
-    bpy.ops.object.shade_smooth()
 
-    # Neck connector (small box bridging plate top to bail)
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, bail_y, PLATE_DEPTH_M / 2))
+    # Small neck pillar connecting top of name to bail
+    bpy.ops.mesh.primitive_cylinder_add(
+        radius   = BAIL_R_MINOR * 1.5,
+        depth    = BAIL_R_MAJOR * 1.4,
+        location = (0, 0, top_z + BAIL_R_MAJOR * 0.6),
+    )
     neck = bpy.context.object
-    neck.scale = (BAIL_R_MAJOR * 2.4, BAIL_R_MAJOR * 1.6, PLATE_DEPTH_M)
-    bpy.ops.object.transform_apply(scale=True)
-    neck.name = "Neck"
+    neck.name = "BailNeck"
 
     # Join bail + neck
     bpy.ops.object.select_all(action='DESELECT')
@@ -149,81 +182,29 @@ def create_bail():
     neck.select_set(True)
     bpy.context.view_layer.objects.active = bail
     bpy.ops.object.join()
+    bpy.ops.object.shade_smooth()
     return bpy.context.object
 
 
-# ─── Materials ─────────────────────────────────────────────────────────────────
-
-def apply_gold_material(obj, material_key: str, name: str = "GoldMat"):
-    mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-    nodes.clear()
-
-    output = nodes.new('ShaderNodeOutputMaterial')
-    bsdf   = nodes.new('ShaderNodeBsdfPrincipled')
-    links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-
-    base_color = MATERIAL_COLORS.get(material_key, MATERIAL_COLORS["yellow-gold"])
-    bsdf.inputs["Base Color"].default_value    = base_color
-    bsdf.inputs["Metallic"].default_value      = 1.0
-    bsdf.inputs["Roughness"].default_value     = 0.08
-    bsdf.inputs["Specular IOR Level"].default_value = 0.5
-
-    if obj.data.materials:
-        obj.data.materials[0] = mat
-    else:
-        obj.data.materials.append(mat)
-
-
-def apply_diamond_material(obj):
-    mat = bpy.data.materials.new(name="DiamondMat")
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-    nodes.clear()
-
-    output = nodes.new('ShaderNodeOutputMaterial')
-    bsdf   = nodes.new('ShaderNodeBsdfPrincipled')
-    links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-
-    bsdf.inputs["Base Color"].default_value       = (1.0, 1.0, 1.0, 1.0)
-    bsdf.inputs["Metallic"].default_value         = 0.0
-    bsdf.inputs["Roughness"].default_value        = 0.0
-    bsdf.inputs["IOR"].default_value              = 2.417
-    bsdf.inputs["Transmission Weight"].default_value = 0.95
-    bsdf.inputs["Coat Weight"].default_value      = 1.0
-
-    if obj.data.materials:
-        obj.data.materials[0] = mat
-    else:
-        obj.data.materials.append(mat)
-
-
-# ─── Diamond Pavé ──────────────────────────────────────────────────────────────
+# ─── Diamond Pavé ────────────────────────────────────────────────────────────
 
 def add_diamonds(text_obj):
-    """Scatter small brilliant-cut diamonds on the text front face via raycasting."""
     import mathutils
-
-    depsgraph   = bpy.context.evaluated_depsgraph_get()
-    bbox        = [text_obj.matrix_world @ mathutils.Vector(c) for c in text_obj.bound_box]
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    bbox      = [text_obj.matrix_world @ mathutils.Vector(c) for c in text_obj.bound_box]
     min_x = min(c.x for c in bbox);  max_x = max(c.x for c in bbox)
     min_z = min(c.z for c in bbox);  max_z = max(c.z for c in bbox)
     front_y = max(c.y for c in bbox)
 
-    # Diamond template (tiny brilliant cut approximation)
-    bpy.ops.mesh.primitive_cone_add(vertices=8, radius1=0.0008, radius2=0.0016, depth=0.001)
+    bpy.ops.mesh.primitive_cone_add(vertices=8, radius1=0.0007, radius2=0.0014, depth=0.0010)
     template = bpy.context.object
     template.name = "DiamondTemplate"
     template.hide_set(True)
     template.hide_render = True
 
-    spacing = 0.0022
+    spacing = 0.0020
     placed  = []
-    x = min_x + spacing / 2
-    row = 0
+    x, row  = min_x + spacing / 2, 0
     while x <= max_x:
         z = min_z + spacing / 2
         while z <= max_z:
@@ -239,7 +220,7 @@ def add_diamonds(text_obj):
                 placed.append(d)
             z += spacing
         row += 1
-        x += spacing
+        x  += spacing
 
     template.hide_set(False)
     if placed:
@@ -250,30 +231,37 @@ def add_diamonds(text_obj):
         bpy.ops.object.join()
         diamonds = bpy.context.active_object
         diamonds.name = "DiamondInstance"
-        apply_diamond_material(diamonds)
-
-    # Remove template
+        mat = bpy.data.materials.new(name="DiamondMat")
+        mat.use_nodes = True
+        n = mat.node_tree.nodes
+        l = mat.node_tree.links
+        n.clear()
+        out  = n.new('ShaderNodeOutputMaterial')
+        bsdf = n.new('ShaderNodeBsdfPrincipled')
+        l.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+        bsdf.inputs["Base Color"].default_value          = (1,1,1,1)
+        bsdf.inputs["Roughness"].default_value           = 0.0
+        bsdf.inputs["IOR"].default_value                 = 2.417
+        bsdf.inputs["Transmission Weight"].default_value = 0.95
+        apply_material(diamonds, mat)
     bpy.data.objects.remove(template, do_unlink=True)
 
 
-# ─── Lighting ──────────────────────────────────────────────────────────────────
+# ─── Lighting ────────────────────────────────────────────────────────────────
 
 def setup_lighting():
-    # Three-point lighting rig for GLB preview
-    lights = [
-        ("KeyLight",   (0.3, -0.3,  0.4), 800),
-        ("FillLight",  (-0.3, -0.1, 0.2), 300),
-        ("RimLight",   (0,     0.4, 0.3), 200),
-    ]
-    for name, pos, strength in lights:
+    for name, pos, strength in [
+        ("Key",  ( 0.2, -0.3, 0.3), 600),
+        ("Fill", (-0.2, -0.1, 0.1), 250),
+        ("Rim",  ( 0.0,  0.4, 0.2), 150),
+    ]:
         bpy.ops.object.light_add(type='AREA', location=pos)
-        l = bpy.context.object
-        l.name = name
-        l.data.energy = strength
-        l.data.size   = 0.2
+        bpy.context.object.name = name
+        bpy.context.object.data.energy = strength
+        bpy.context.object.data.size   = 0.15
 
 
-# ─── Export ────────────────────────────────────────────────────────────────────
+# ─── Export ─────────────────────────────────────────────────────────────────
 
 def export_glb(filepath: str):
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -282,44 +270,44 @@ def export_glb(filepath: str):
         export_format='GLB',
         export_materials='EXPORT',
         export_apply=True,
-        export_lights=True,
     )
-    print(f"SUCCESS: GLB exported to {filepath}")
+    size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
+    print(f"SUCCESS: GLB exported to {filepath} ({size:,} bytes)")
 
 
-# ─── Main ──────────────────────────────────────────────────────────────────────
+# ─── Main ───────────────────────────────────────────────────────────────────
 
 def main():
-    # Args: name  material  font  has_diamonds  output_glb
-    args = sys.argv[sys.argv.index("--") + 1:]
+    args         = sys.argv[sys.argv.index("--") + 1:]
     name         = args[0]
-    material     = args[1]                       # e.g. "yellow-gold"
-    font         = args[2].lower()               # e.g. "pacifico"
+    material     = args[1]
+    font         = args[2].lower()
     has_diamonds = args[3].lower() == "true"
     output_path  = args[4]
 
     clear_scene()
+    gold = make_gold_material(material, "Gold")
 
-    # 1. Plate
-    plate = create_plate()
-    apply_gold_material(plate, material, "PlateMat")
+    # 1. Name text
+    text = create_name_mesh(name, font)
+    apply_material(text, gold)
 
-    # 2. Text
-    text = create_text_mesh(name, font)
-    apply_gold_material(text, material, "TextMat")
+    # 2. Thin base spine — connects all letter islands
+    spine = create_base_spine(text)
+    apply_material(spine, gold)
 
-    # 3. Bail
-    bail = create_bail()
-    apply_gold_material(bail, material, "BailMat")
+    # 3. Bail ring at top
+    bail = create_bail(text)
+    apply_material(bail, gold)
 
-    # 4. Diamonds (optional)
+    # 4. Optional diamond pavé on the text face
     if has_diamonds:
         add_diamonds(text)
 
     # 5. Lighting
     setup_lighting()
 
-    # 6. Export
+    # 6. Export GLB
     export_glb(output_path)
 
 
