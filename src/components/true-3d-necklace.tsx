@@ -80,7 +80,8 @@ export function True3DNecklace({ name, material, hasDiamonds, modelUrl, isGenera
             <Canvas
                 camera={{ position: [0, 0, 0.12], fov: fov, near: 0.0005, far: 10 }}
                 shadows
-                gl={{ antialias: true, toneMappingExposure: 1.25 }}
+                dpr={[1, 1.5]}
+                gl={{ antialias: true, toneMappingExposure: 1.25, powerPreference: "high-performance" }}
             >
                 <ambientLight intensity={0.7} />
                 <spotLight
