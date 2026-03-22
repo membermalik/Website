@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Install Python Requirements
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 
 # Download necessary fonts for OpenSCAD natively into the Linux container!
@@ -31,7 +31,7 @@ RUN mkdir -p /usr/share/fonts/custom && \
     fc-cache -fv
 
 # Copy the rest of the Backend Application
-COPY . .
+COPY backend/ .
 
 # Ensure Output Directory exists and has correct permissions
 RUN mkdir -p output && chmod 777 output
