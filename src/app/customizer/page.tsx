@@ -60,8 +60,24 @@ export default function CustomizerPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name, material, font, hasDiamonds })
             });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                setIsGenerating(false);
+                setGenerationStatus("");
+                alert(`Generation Error: ${errData.error || "Could not connect to backend."} Check BACKEND_URL.`);
+                return;
+            }
+
             const data = await res.json();
             const jobId = data.job_id;
+
+            if (!jobId) {
+                setIsGenerating(false);
+                setGenerationStatus("");
+                alert("Error: Backend did not return a jobId. Is the Python server running?");
+                return;
+            }
 
             let pollCount = 0;
             const poll = setInterval(async () => {
@@ -70,6 +86,13 @@ export default function CustomizerPage() {
                 if (pollCount >= 8) setGenerationStatus("OpenSCAD is creating print file…");
 
                 const statusRes = await fetch(`/api/status/${jobId}`);
+                if (!statusRes.ok) {
+                    setIsGenerating(false);
+                    setGenerationStatus("");
+                    clearInterval(poll);
+                    alert("Lost connection to backend server during generation.");
+                    return;
+                }
                 const statusData = await statusRes.json();
                 if (statusData.status === "completed") {
                     const glbFilename = statusData.glb_url?.split('/').pop();
