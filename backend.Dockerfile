@@ -12,7 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fontconfig \
     python3-numpy \
     python3-scipy \
-    python3-trimesh \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
