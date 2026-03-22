@@ -122,10 +122,10 @@ export default function CustomizerPage() {
                 <link key={f.id} rel="stylesheet" href={f.googleFont} />
             ))}
 
-            <div className="relative w-full h-[calc(100vh-64px)] bg-[#FDFBF7] dark:bg-neutral-950 text-stone-900 dark:text-white selection:bg-stone-500/20 overflow-hidden flex flex-col md:flex-row">
+            <div className="relative w-full h-[calc(100dvh-64px)] bg-[#FDFBF7] dark:bg-neutral-950 text-stone-900 dark:text-white selection:bg-stone-500/20 overflow-hidden flex flex-col md:flex-row">
 
                 {/* 3D Preview Panel */}
-                <div className="absolute md:relative top-0 w-full h-[45vh] md:h-full md:w-[60vw] md:order-2 pointer-events-auto z-0 flex justify-center items-center">
+                <div className="absolute md:relative top-0 w-full h-[45dvh] md:h-full md:w-[60vw] md:order-2 pointer-events-auto z-0 flex justify-center items-center">
                     <div className="w-full h-full opacity-100">
                         <True3DNecklace name={name} material={material} hasDiamonds={hasDiamonds} modelUrl={modelUrl} isGenerating={isGenerating} />
                     </div>
@@ -135,7 +135,7 @@ export default function CustomizerPage() {
                 {/* Scrollable Panel */}
                 <div
                     ref={scrollRef}
-                    className="absolute md:relative bottom-0 w-full h-[60vh] md:h-full md:w-[40vw] lg:w-[40vw] md:order-1 z-10 bg-[#FDFBF7]/95 dark:bg-neutral-950/95 md:bg-[#FDFBF7] md:dark:bg-neutral-950 backdrop-blur-2xl md:backdrop-blur-none rounded-t-[2.5rem] md:rounded-none shadow-[0_-20px_40px_rgba(0,0,0,0.05)] dark:shadow-none overflow-y-auto border-t md:border-t-0 md:border-r border-stone-200 dark:border-white/10 custom-scrollbar scroll-smooth snap-y snap-mandatory"
+                    className="absolute md:relative bottom-0 w-full h-[60dvh] md:h-full md:w-[40vw] lg:w-[40vw] md:order-1 z-10 bg-[#FDFBF7]/95 dark:bg-neutral-950/95 md:bg-[#FDFBF7] md:dark:bg-neutral-950 backdrop-blur-md md:backdrop-blur-none rounded-t-[2.5rem] md:rounded-none shadow-[0_-20px_40px_rgba(0,0,0,0.05)] dark:shadow-none overflow-y-auto border-t md:border-t-0 md:border-r border-stone-200 dark:border-white/10 custom-scrollbar scroll-smooth snap-y md:snap-mandatory"
                 >
                     <div className="md:hidden w-full flex justify-center absolute top-4 left-0 z-20 pointer-events-none">
                         <div className="w-12 h-1.5 bg-stone-300 dark:bg-white/20 rounded-full" />
@@ -144,7 +144,7 @@ export default function CustomizerPage() {
                     <div className="w-full flex flex-col">
 
                         {/* Intro */}
-                        <section className="relative w-full h-[60vh] md:h-full md:min-h-[calc(100vh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 pt-8 md:pt-0 text-center snap-start snap-always">
+                        <section className="relative w-full h-[60dvh] md:h-full md:min-h-[calc(100dvh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 pt-8 md:pt-0 text-center snap-start snap-always">
                             <motion.div initial="hidden" animate="visible" variants={sectionVariants} className="w-full max-w-sm pointer-events-auto flex flex-col items-center">
                                 <span className="text-[10px] md:text-xs uppercase tracking-[0.4em] mb-4 flex items-center justify-center gap-3 text-stone-500 dark:text-white/50">
                                     <Sparkles className="w-3 h-3 md:w-3 md:h-3" /> Personalize
@@ -164,7 +164,7 @@ export default function CustomizerPage() {
                         <div className="w-full px-12 md:px-16"><div className="h-px w-full bg-stone-200 dark:bg-white/10" /></div>
 
                         {/* Chapter 1 — Name */}
-                        <section className="relative w-full h-[60vh] md:h-full md:min-h-[calc(100vh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 text-center snap-start snap-always py-12 md:py-0">
+                        <section className="relative w-full h-[60dvh] md:h-full md:min-h-[calc(100dvh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 text-center snap-start snap-always py-12 md:py-0">
                             <motion.div initial="hidden" whileInView="visible" viewport={{ root: scrollRef, once: false, amount: 0.1, margin: "100px" }} variants={sectionVariants} className="w-full max-w-sm pointer-events-auto flex flex-col items-center">
                                 <h2 className="text-[10px] md:text-xs font-medium tracking-[0.3em] uppercase text-stone-500 dark:text-white/50 mb-3">01. Identity</h2>
                                 <h3 className="text-3xl md:text-5xl font-serif mb-12 text-stone-800 dark:text-white">What is your story?</h3>
@@ -201,7 +201,7 @@ export default function CustomizerPage() {
                         <div className="w-full px-12 md:px-16"><div className="h-px w-full bg-stone-200 dark:bg-white/10" /></div>
 
                         {/* Chapter 2 — Font */}
-                        <section className="relative w-full h-[60vh] md:h-full md:min-h-[calc(100vh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 text-center snap-start snap-always py-12 md:py-0">
+                        <section className="relative w-full h-[60dvh] md:h-full md:min-h-[calc(100dvh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 text-center snap-start snap-always py-12 md:py-0">
                             <motion.div initial="hidden" whileInView="visible" viewport={{ root: scrollRef, once: false, amount: 0.1, margin: "100px" }} variants={sectionVariants} className="w-full max-w-sm pointer-events-auto flex flex-col items-center">
                                 <h2 className="text-[10px] md:text-xs font-medium tracking-[0.3em] uppercase text-stone-500 dark:text-white/50 mb-3">02. Typeface</h2>
                                 <h3 className="text-3xl md:text-5xl font-serif mb-10 text-stone-800 dark:text-white">Choose a style.</h3>
@@ -230,7 +230,7 @@ export default function CustomizerPage() {
                         <div className="w-full px-12 md:px-16"><div className="h-px w-full bg-stone-200 dark:bg-white/10" /></div>
 
                         {/* Chapter 3 — Material */}
-                        <section className="relative w-full h-[60vh] md:h-full md:min-h-[calc(100vh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 text-center snap-start snap-always py-12 md:py-0">
+                        <section className="relative w-full h-[60dvh] md:h-full md:min-h-[calc(100dvh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 text-center snap-start snap-always py-12 md:py-0">
                             <motion.div initial="hidden" whileInView="visible" viewport={{ root: scrollRef, once: false, amount: 0.1, margin: "100px" }} variants={sectionVariants} className="w-full max-w-sm pointer-events-auto flex flex-col items-center">
                                 <h2 className="text-[10px] md:text-xs font-medium tracking-[0.3em] uppercase text-stone-500 dark:text-white/50 mb-3">03. The Canvas</h2>
                                 <h3 className="text-3xl md:text-5xl font-serif mb-12 text-stone-800 dark:text-white">Choose a tone.</h3>
@@ -248,7 +248,7 @@ export default function CustomizerPage() {
                         <div className="w-full px-12 md:px-16"><div className="h-px w-full bg-stone-200 dark:bg-white/10" /></div>
 
                         {/* Chapter 4 — Diamonds & Checkout */}
-                        <section className="relative w-full h-[60vh] md:h-full md:min-h-[calc(100vh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 text-center snap-start snap-always py-12 md:py-0">
+                        <section className="relative w-full h-[60dvh] md:h-full md:min-h-[calc(100dvh-64px)] flex flex-col justify-center items-center px-8 md:px-12 lg:px-16 text-center snap-start snap-always py-12 md:py-0">
                             <motion.div initial="hidden" whileInView="visible" viewport={{ root: scrollRef, once: false, amount: 0.1, margin: "100px" }} variants={sectionVariants} className="w-full max-w-sm pointer-events-auto flex flex-col items-center h-full justify-center md:py-16">
                                 <div className="flex flex-col justify-center w-full">
                                     <h2 className="text-[10px] md:text-xs font-medium tracking-[0.3em] uppercase text-stone-500 dark:text-white/50 mb-3">04. Radiance</h2>
